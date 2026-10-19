@@ -1,0 +1,75 @@
+MICRO 3.1-3.3 CHEAT SHEET
+== 3.1 PRODUCTION ==
+SR = at least 1 input fixed
+LR = all inputs can change
+Inputs = land, labor, capital
+Revenue = P x Q
+TP = total output
+AP = TP / workers
+MP = chg TP / chg workers
+Increasing returns: MP & AP go up, TP grows faster (specialization)
+Diminishing returns: MP goes down, TP grows slower
+Negative returns: MP below 0, TP goes down
+Law of dim returns: keep adding workers to fixed stuff -> extra output falls
+-- Graph rules (MOST TESTED) --
+MP up -> TP grows faster
+MP down -> TP grows slower
+MP = 0 -> TP at max
+MP < 0 -> TP falls
+MP > AP -> AP goes up
+MP < AP -> AP goes down
+MP crosses AP at max AP
+Ex: L 0-6, TP 0,15,34,48,60,62,60
+MP -,15,19,14,12,2,-2
+AP -,15,17,16,15,12.4,10
+== 3.2 SR COSTS ==
+Explicit = money paid out
+Implicit = opportunity cost (salary given up)
+Econ cost = explicit + implicit
+Acct profit = TR - explicit
+Econ profit = TR - explicit - implicit
+FC = same at every Q (rent, salaries, insurance). FC = TC at Q=0
+VC = changes with Q (hourly wages, electricity, shipping). VC = 0 at Q=0
+TC = FC + VC
+AFC = FC/Q (always falls)
+AVC = VC/Q
+ATC = TC/Q = AFC + AVC
+AFC = ATC - AVC
+FC = (ATC - AVC) x Q
+MC = chg TC / chg Q (= chg VC)
+MC from AVC: VC = AVC x Q, then subtract
+Ex: AVC 100@5, 150@6 -> 500, 900 -> MC 400
+MC falls first (specialization), then rises (dim returns)
+FC changes ATC & AFC only, NOT MC or AVC
+-- Cost graph rules --
+ATC & AVC are U-shaped
+MC crosses AVC & ATC at their lowest points
+MC below avg -> avg falls
+MC above avg -> avg rises
+Gap ATC-AVC = AFC, gets smaller as Q grows
+min AVC comes before min ATC
+-- MP & MC are opposites --
+MP up <-> MC down
+MP max <-> MC min
+MP down <-> MC up
+AP max <-> AVC min
+MC = wage / MP
+AVC = wage / AP
+== 3.3 LR COSTS ==
+LR: all inputs change, firm can change plant size
+LRATC = lowest cost at each Q = bottom edge of SRATC curves
+Econ of scale: LRATC going down
+ = increasing returns: inputs x2 -> output MORE than x2
+Constant returns: LRATC flat
+ = inputs x2 -> output exactly x2
+Diseconomies: LRATC going up (too big to manage)
+ = decreasing returns: inputs x2 -> output LESS than x2
+Ex: inputs +50%, output +100% -> increasing
+Table trick: double BOTH inputs, compare output
+MES = smallest Q where LRATC hits its lowest. Used to guess # of firms
+Econ of scale causes: specialization, bulk buying, mass production
+Diseconomies cause: hard to manage
+Dim returns = SR. Returns to scale = LR
+== PROFIT (extra) ==
+Econ profit > 0: profit. = 0: normal profit. < 0: loss
+Profit max: MR = MC. MR > MC make more. MR < MC make less
