@@ -32,6 +32,17 @@ missing), with no GPU and no viewport. So:
   them; republish the page with the new files. Read the artifact first if
   the page's source isn't on disk in this session.
 - Hand the user the FBX for Roblox Studio with SendUserFile.
+- **From a concept image, don't hand-build organic creatures from primitives**:
+  the result looks like a toy. Use image-to-3D (TripoSR on CPU, see
+  `entities/wretch/triposr/README.md`), then `entities/wretch/build_from_concept.py`
+  to decimate, UV, project the concept views as the texture, add claws/teeth/
+  spikes (`attachments.py`) and write the PBR maps. Primitives are for blockouts
+  of props and architecture.
+- Pitfalls already hit: a script named like a stdlib module (`inspect.py`)
+  breaks `bpy`; bakes clamp negative values (pack vectors into 0..1); the
+  scikit-image marching cubes flips normals; strip vertex colours before export
+  (viewers multiply them in); Model Workshop must keep `createImageBitmap`
+  disabled or the artifact frame blocks embedded textures.
 - Sculpting by hand and painting by hand are the user's job when needed.
   You can write procedural sculpt/texture steps (displacement, noise, edge
   wear, AO-driven dirt), and you guide the user through manual passes.
