@@ -76,6 +76,23 @@ bpy.context.view_layer.objects.active = low
 dec = low.modifiers.new("Decimate", "DECIMATE")
 dec.ratio = LOW_TRIS / len(low.data.polygons)
 bpy.ops.object.modifier_apply(modifier="Decimate")
+
+# Claws, fangs and spikes TripoSR couldn't resolve: built onto the mesh, joined into
+# LOW (so the projection paints them) and into HIGH (so the normal bake sees them).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from attachments import add_attachments  # noqa: E402
+
+extra = add_attachments(high, HEIGHT)
+for target in (low, high):
+    part = bpy.data.objects.new(f"{target.name}_parts", extra.data.copy())
+    target.users_collection[0].objects.link(part)
+    with bpy.context.temp_override(active_object=target, selected_editable_objects=[target, part]):
+        bpy.ops.object.join()
+bpy.data.meshes.remove(extra.data)
+print("LOW objects after join:", [o.name for o in bpy.data.collections["LOW"].objects])
+for o in bpy.context.view_layer.objects:
+    o.select_set(o == low)
+bpy.context.view_layer.objects.active = low
 bpy.ops.object.mode_set(mode="EDIT")
 bpy.ops.mesh.select_all(action="SELECT")
 bpy.ops.uv.smart_project(angle_limit=math.radians(60), island_margin=0.004)
@@ -203,15 +220,52 @@ def sample(a, u, v):
     return c[:, :3], c[:, 3]
 
 
+BINS = 400
+
+
+def row_extents(img):
+    """Left and right edge of the creature on every image row (smoothed over a few rows)."""
+    from scipy import ndimage
+    m = img[..., 3] > 0.5
+    cols = np.arange(m.shape[1])
+    left = np.where(m.any(1), np.where(m, cols, 10**6).min(1), np.nan)
+    right = np.where(m.any(1), np.where(m, cols, -1).max(1), np.nan)
+    left = ndimage.minimum_filter1d(np.nan_to_num(left, nan=1e6), 5).astype(float)
+    right = ndimage.maximum_filter1d(np.nan_to_num(right, nan=-1), 5).astype(float)
+    return left, right
+
+
+def mesh_extents(axis):
+    """The mesh's extent along `axis` in each of BINS height slices, smoothed the same way."""
+    from scipy import ndimage
+    b = np.clip(((mesh_co[:, 2] - lo[2]) / (hi[2] - lo[2]) * BINS).astype(int), 0, BINS - 1)
+    mn = np.full(BINS, np.inf)
+    mx = np.full(BINS, -np.inf)
+    np.minimum.at(mn, b, mesh_co[:, axis])
+    np.maximum.at(mx, b, mesh_co[:, axis])
+    mn = ndimage.minimum_filter1d(np.where(np.isinf(mn), 1e6, mn), 3)
+    mx = ndimage.maximum_filter1d(np.where(np.isinf(mx), -1e6, mx), 3)
+    return mn, mx
+
+
 for name, axis, flip, toward, facing in PROJ:
     img, (x0, x1, y0, y1) = views[name]
     w = facing(N) ** 3
-    across = (P[:, axis] - lo[axis]) / (hi[axis] - lo[axis])
+    # Register row by row: at each height, the mesh's extent maps onto the
+    # creature's extent in that image row, so posture differences between
+    # TripoSR's guess and the concept (a lean, a drooped head) don't smear it.
+    up = (P[:, 2] - lo[2]) / (hi[2] - lo[2])
+    v = y1 - up * (y1 - y0)
+    left, right = row_extents(img)
+    row = np.clip(v.round().astype(int), 0, len(left) - 1)
+    mn, mx = mesh_extents(axis)
+    b = np.clip((up * BINS).astype(int), 0, BINS - 1)
+    across = (P[:, axis] - mn[b]) / np.maximum(mx[b] - mn[b], 1e-6)
     if flip:
         across = 1 - across
-    up = (P[:, 2] - lo[2]) / (hi[2] - lo[2])
-    u = x0 + across * (x1 - x0)
-    v = y1 - up * (y1 - y0)
+    valid = (left[row] < 1e5) & (mx[b] > mn[b])
+    u = left[row] + across * (right[row] - left[row])
+    w = w * valid
     rgb, alpha = sample(img, u, v)
     w = w * (alpha > 0.5)
     # Occlusion: a texel only takes this view if nothing of the body is in front of it.
@@ -226,11 +280,17 @@ for name, axis, flip, toward, facing in PROJ:
     wsum += w
     print(f"projected {name}{' (mirrored)' if flip and name == 'side' else ''}: {int((w > 0.02).sum())} texels")
 
-fallback = vc[covered][:, :3]
-blend = np.clip(wsum / 0.15, 0, 1)[:, None]  # weak coverage fades into TripoSR's colour
-colour = np.where(wsum[:, None] > 0, acc / np.maximum(wsum[:, None], 1e-6), fallback)
-colour = colour * blend + fallback * (1 - blend)
-print("texels no view saw (TripoSR colour):", int((wsum <= 0).sum()))
+# Texels no view saw well take the colour of the nearest well-painted skin in 3D
+# (TripoSR's own colours are far darker than the concept's).
+from scipy.spatial import cKDTree  # noqa: E402
+colour = acc / np.maximum(wsum[:, None], 1e-6)
+good = wsum > 0.3
+tree = cKDTree(P[good])
+dist, near = tree.query(P, k=8)
+neighbour = colour[good][near].mean(axis=1)
+blend = np.clip(wsum / 0.3, 0, 1)[:, None]
+colour = colour * blend + neighbour * (1 - blend)
+print("texels filled from nearby skin:", int((~good).sum()))
 
 albedo = np.zeros((TEX, TEX, 4), dtype=np.float32)
 albedo[idx[:, 0], idx[:, 1], :3] = colour
@@ -321,7 +381,9 @@ save(np.clip(rough, 0.08, 0.95), "Wretch_Roughness.png", srgb=False)
 save(np.zeros_like(rough), "Wretch_Metalness.png", srgb=False)
 # Emissive mask: the glowing red eyes, the brightest saturated red.
 eyes = np.clip((r - 0.45) * 5, 0, 1) * np.clip((r - 2.2 * g) * 5, 0, 1)
-save(eyes, "Wretch_Emissive.png", srgb=False)
+save(eyes, "Wretch_Emissive.png", srgb=False)            # Roblox: EmissiveMaskContent
+glow = np.dstack([eyes * 1.0, eyes * 0.08, eyes * 0.02])
+save(glow, "Wretch_EmissiveColor.png")                   # glTF / Blender: emission colour
 
 # ---------- Final material on LOW, save ----------
 scene.render.bake.use_selected_to_active = False
@@ -345,12 +407,15 @@ nt.links.new(tex_node("Wretch_Metalness.png", True).outputs["Color"], bsdf.input
 nmap = nt.nodes.new("ShaderNodeNormalMap")
 nt.links.new(tex_node("Wretch_Normal.png", True).outputs["Color"], nmap.inputs["Color"])
 nt.links.new(nmap.outputs["Normal"], bsdf.inputs["Normal"])
-em = tex_node("Wretch_Emissive.png", True)
-nt.links.new(em.outputs["Color"], bsdf.inputs["Emission Strength"])
-bsdf.inputs["Emission Color"].default_value = (1.0, 0.08, 0.02, 1)
+nt.links.new(tex_node("Wretch_EmissiveColor.png").outputs["Color"], bsdf.inputs["Emission Color"])
+bsdf.inputs["Emission Strength"].default_value = 4.0
 low.data.materials.clear()
 low.data.materials.append(mat)
 high.hide_render = True
 low["entity_height"] = HEIGHT
+# TripoSR's vertex colours were only a fallback for the bake; left on, viewers and
+# Roblox multiply them into the texture and turn it near-black.
+while low.data.color_attributes:
+    low.data.color_attributes.remove(low.data.color_attributes[0])
 bpy.ops.wm.save_as_mainfile(filepath=os.path.join(out_dir, "Wretch.blend"))
 print("saved", os.path.join(out_dir, "Wretch.blend"))
