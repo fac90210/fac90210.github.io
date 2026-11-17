@@ -27,3 +27,12 @@ MCP"; in this environment, do the same operations with Python scripts instead:
 VFX made here must be usable in Roblox, but Roblox must not change how they look.
 Deliver flipbook sheets (1024 x 1024, 4x4 or 8x8 grid, transparent) for particle
 effects, and FBX meshes with textures for models.
+
+## Check the result visually
+
+There is no live viewport. To see the scene, render frames to PNG files and open them
+with the Read tool. Do this before you deliver:
+
+- Render a few key frames at low resolution first (start, peak, end of the effect).
+- Put several frames on one contact sheet with ffmpeg to compare them in one image.
+- Look at the final video frames and the flipbook sheets, not only the test frames.
