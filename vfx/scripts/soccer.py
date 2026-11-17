@@ -26,7 +26,7 @@ ap.add_argument("--spp", type=int, default=32)
 ap.add_argument("--frames", default="")
 ap.add_argument("--cam", default="shot")
 ap.add_argument("--save", default="")
-ap.add_argument("--fast", action="store_true", help="no motion blur, depth of field or volume")
+ap.add_argument("--fast", action="store_true", help="no motion blur or depth of field")
 args = ap.parse_args()
 
 motion = Motion()
@@ -77,6 +77,7 @@ scene.view_settings.view_transform = "Standard"
 scene.view_settings.look = "None"
 scene.render.use_motion_blur = not args.fast
 scene.render.motion_blur_shutter = 0.5
+scene.render.motion_blur_position = "START"
 
 
 def collection(name):
@@ -312,13 +313,13 @@ def camera_state(s):
         pos = orbit((0, 0), lerp(62, 148, smooth(u)), lerp(16.5, 14.0, u), lerp(2.6, 4.2, u))
         target = torso_center(t).lerp(soft_ball(t), 0.25)
         target.z = max(target.z + 0.4, 3.5)
-        return pos, target, 34, 5.6
+        return pos, target, 30, 5.6
     if s < 9.18:                                              # C: low and close for the freestyle
         u = (s - 5.62) / (9.18 - 5.62)
-        pos = orbit((0, 0), lerp(40, -18, smooth(u)), lerp(12.5, 10.5, u), lerp(1.0, 2.2, u))
+        pos = orbit((0, 0), lerp(40, -18, smooth(u)), lerp(13.5, 11.5, u), lerp(1.0, 2.2, u))
         target = torso_center(t).lerp(soft_ball(t, 0.4), 0.28)
         target.z = max(target.z, 3.1)
-        return pos, target, 30, 4.0
+        return pos, target, 26, 4.0
     if s < S_E0:                                              # D: from behind, tilt up with the lob
         u = (s - 9.18) / (S_E0 - 9.18)
         pos = Vector((-6.5, -12.5, 0.45)).lerp(Vector((-5.0, -10.5, 1.3)), smooth(u))
@@ -745,10 +746,10 @@ def make_ring(name, color):
     hot.inputs[7].default_value = (0.9, 0.97, 1.0, 1)
     emit = n.new("ShaderNodeEmission")
     n.link(hot.outputs[2], emit.inputs["Color"])
-    emit.inputs["Strength"].default_value = 5.0
+    emit.inputs["Strength"].default_value = 3.0
     transp = n.new("ShaderNodeBsdfTransparent")
     mix = n.new("ShaderNodeMixShader")
-    n.link(n.math("MULTIPLY", alpha, 1.0, clamp=True), mix.inputs[0])
+    n.link(n.math("MULTIPLY", alpha, 0.8, clamp=True), mix.inputs[0])
     n.link(transp.outputs[0], mix.inputs[1])
     n.link(emit.outputs[0], mix.inputs[2])
     n.link(mix.outputs[0], out.inputs["Surface"])
@@ -806,34 +807,50 @@ for c in list(fx_flare.users_collection):
 COL_FX.objects.link(fx_flare)
 fx_flare.visible_shadow = fx_flare.visible_diffuse = fx_flare.visible_glossy = False
 
-# --- nebula: a glowing cloud that expands along the kick when the ball leaves
-bpy.ops.mesh.primitive_cube_add(size=2.0)
-fx_nebula = bpy.context.active_object
-fx_nebula.name = "FX_Domain_Nebula"
-for c in list(fx_nebula.users_collection):
-    c.objects.unlink(fx_nebula)
-COL_FX.objects.link(fx_nebula)
+# --- nebula: layered glowing cloud cards that expand along the kick when the ball leaves
 mat, n, out = new_material("MAT_FX_Nebula")
 coords = n.new("ShaderNodeTexCoord").outputs["Object"]
+info = n.new("ShaderNodeObjectInfo")
+seed = n.vmath("SCALE", (7.3, 3.1, 5.7), scale=info.outputs["Random"])
 NEB_POWER = n.new("ShaderNodeValue")
 NEB_CHURN = n.new("ShaderNodeValue")
 NEB_ERODE = n.new("ShaderNodeValue")
-warp_n = n.noise(coords, 1.4, w=NEB_CHURN.outputs[0], detail=2.0)
-p_w = n.vmath("ADD", coords, n.vmath("SCALE", n.vmath("SUBTRACT", warp_n.outputs["Color"], (0.5, 0.5, 0.5)), scale=0.8))
+p_seed = n.vmath("ADD", coords, seed)
+warp_n = n.noise(p_seed, 1.4, w=NEB_CHURN.outputs[0], detail=2.0)
+p_w = n.vmath("ADD", coords, n.vmath("SCALE", n.vmath("SUBTRACT", warp_n.outputs["Color"], (0.5, 0.5, 0.5)), scale=0.7))
 rr = n.vmath("LENGTH", p_w)
-lumps = n.noise(coords, 2.6, w=NEB_CHURN.outputs[0], detail=5.0, roughness=0.65).outputs["Fac"]
-shell = n.map_range(n.math("ADD", rr, n.math("MULTIPLY", n.math("SUBTRACT", lumps, 0.5), 0.9)), 0.85, 0.35, 0.0, 1.0, smooth=True)
+lumps = n.noise(p_seed, 2.6, w=NEB_CHURN.outputs[0], detail=5.0, roughness=0.65).outputs["Fac"]
+shell = n.map_range(n.math("ADD", rr, n.math("MULTIPLY", n.math("SUBTRACT", lumps, 0.5), 0.8)), 0.80, 0.25, 0.0, 1.0, smooth=True)
+shell = n.math("MULTIPLY", shell, n.map_range(n.vmath("LENGTH", coords), 1.0, 0.7, 0.0, 1.0, smooth=True))
 wisps = n.map_range(lumps, NEB_ERODE.outputs[0], n.math("ADD", NEB_ERODE.outputs[0], 0.25), 0.0, 1.0, smooth=True)
-hue = n.noise(p_w, 1.1, w=n.math("MULTIPLY", NEB_CHURN.outputs[0], 0.5), detail=1.0).outputs["Fac"]
-neb_colors = n.ramp(n.map_range(hue, 0.28, 0.72), [
+hue = n.noise(p_seed, 1.1, w=n.math("MULTIPLY", NEB_CHURN.outputs[0], 0.5), detail=1.0).outputs["Fac"]
+neb_colors = n.ramp(n.map_range(hue, 0.30, 0.70), [
     (0.00, (0.06, 0.03, 0.45, 1)), (0.25, (0.40, 0.08, 1.00, 1)), (0.50, (1.00, 0.12, 0.75, 1)),
     (0.75, (0.10, 0.80, 1.00, 1)), (1.00, (0.90, 0.95, 1.00, 1))])
+neb_alpha = n.math("MULTIPLY", n.math("MULTIPLY", shell, wisps), NEB_POWER.outputs[0])
 emit = n.new("ShaderNodeEmission")
 n.link(neb_colors.outputs["Color"], emit.inputs["Color"])
-n.link(n.math("MULTIPLY", n.math("MULTIPLY", n.math("MULTIPLY", shell, wisps), NEB_POWER.outputs[0]), 1.0), emit.inputs["Strength"])
-n.link(emit.outputs[0], out.inputs["Volume"])
-fx_nebula.data.materials.append(mat)
-fx_nebula.visible_shadow = fx_nebula.visible_diffuse = fx_nebula.visible_glossy = False
+emit.inputs["Strength"].default_value = 2.2
+transp = n.new("ShaderNodeBsdfTransparent")
+mix = n.new("ShaderNodeMixShader")
+n.link(n.math("MULTIPLY", neb_alpha, 1.0, clamp=True), mix.inputs[0])
+n.link(transp.outputs[0], mix.inputs[1])
+n.link(emit.outputs[0], mix.inputs[2])
+n.link(mix.outputs[0], out.inputs["Surface"])
+neb_mesh = bpy.data.meshes.new("FX_NebulaCard")
+bm = bmesh.new()
+bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=1.0)
+bm.to_mesh(neb_mesh)
+bm.free()
+neb_mesh.materials.append(mat)
+NEBULA = []
+for i in range(7):
+    card = bpy.data.objects.new(f"FX_Nebula_{i}", neb_mesh)
+    COL_FX.objects.link(card)
+    card.visible_shadow = card.visible_diffuse = card.visible_glossy = False
+    NEBULA.append(card)
+NEB_SPEC = [(0.0, 1.00, 0.0, 0.0), (1.5, 0.85, 1.2, 0.4), (3.0, 0.75, -1.0, 0.8), (4.5, 0.62, 0.8, -0.9),
+            (6.0, 0.50, -0.6, -0.5), (-1.2, 0.80, -1.4, -0.3), (2.2, 0.55, 0.3, 1.3)]   # along axis, size, side offsets
 
 # --- colored lights on the dummy and the pitch
 light_data = bpy.data.lights.new("LGT_FX_Kick", "POINT")
@@ -845,7 +862,7 @@ light2_data.shadow_soft_size = 2.0
 fx_light2 = bpy.data.objects.new("LGT_FX_Burst", light2_data)
 COL_FX.objects.link(fx_light2)
 
-FX_OBJECTS = [fx_stars, fx_trail, fx_galaxy, fx_flare, fx_nebula, fx_light, fx_light2] + [r[0] for r in RIPPLES + SHOCKS]
+FX_OBJECTS = [fx_stars, fx_trail, fx_galaxy, fx_flare, fx_light, fx_light2] + NEBULA + [r[0] for r in RIPPLES + SHOCKS]
 
 
 def pulse(x, attack, decay):
@@ -921,10 +938,10 @@ def apply_vfx(frame):
             u = age / life
             obj.matrix_world = (Matrix.Translation(P_R + KICK * (offset + 2.0 * u)) @ DISC_ROT
                                 @ Matrix.Scale(0.6 + size * (1 - (1 - u) ** 2.4), 4))
-            power.default_value = (1 - u) ** 1.6 * 1.6 * fade
+            power.default_value = (1 - u) ** 1.6 * 1.2 * fade
 
     # flare
-    flare_power = 0.9 * pulse(sigma, 0.03, 0.16) + 0.8 * pulse(rel, 0.03, 0.20) + (0.07 * charge if rel < 0 else 0.0)
+    flare_power = 0.9 * pulse(sigma, 0.03, 0.16) + 0.55 * pulse(rel, 0.03, 0.16) + (0.07 * charge if rel < 0 else 0.0)
     fx_flare.hide_render = flare_power < 0.01
     flare_pos = center if rel < 0 else P_R
     toward = (cam_pos - flare_pos).normalized()
@@ -935,12 +952,14 @@ def apply_vfx(frame):
 
     # nebula
     neb_power = pulse(rel, 0.07, 0.62) * 1.25 * fade if rel > 0 else 0.0
-    fx_nebula.hide_render = args.fast or neb_power < 0.004
     grow = 1 - math.exp(-max(rel, 0) * 2.6)
     size = 1.6 + 7.5 * grow
-    fx_nebula.matrix_world = (Matrix.Translation(P_R + KICK * (1.0 + 5.0 * grow)) @ DISC_ROT
-                              @ Matrix.Diagonal((size, size, size * 1.45, 1.0)))
-    NEB_POWER.outputs[0].default_value = neb_power * 1.1 / max(size / 4.0, 0.5)
+    face = cam_quat.to_matrix().to_4x4()
+    for card, (axis_pos, card_size, off1, off2) in zip(NEBULA, NEB_SPEC):
+        card.hide_render = neb_power < 0.004
+        where = P_R + KICK * (1.0 + (2.0 + axis_pos) * grow) + (E1 * off1 + E2 * off2) * grow * 1.6
+        card.matrix_world = Matrix.Translation(where) @ face @ Matrix.Scale(size * card_size, 4)
+    NEB_POWER.outputs[0].default_value = neb_power * 0.6
     NEB_CHURN.outputs[0].default_value = max(rel, 0) * 0.9
     NEB_ERODE.outputs[0].default_value = 0.22 + 0.5 * smooth(max(rel, 0) / 1.7)
 
@@ -950,7 +969,7 @@ def apply_vfx(frame):
     light_data.energy = (1800.0 * charge + 4000.0 * pulse(sigma, 0.03, 0.12)) * fade
     fx_light2.location = P_R + KICK * (2.0 + 5.0 * grow) + Vector((0, 0, 0.5))
     light2_data.color = color_cycle(1.0 + max(rel, 0) * 2.2)
-    light2_data.energy = 11000.0 * pulse(rel, 0.04, 0.5) * fade if rel > 0 else 0.0
+    light2_data.energy = 7000.0 * pulse(rel, 0.04, 0.5) * fade if rel > 0 else 0.0
 
     build_stars(s, t, cam_np, fade)
     build_trail(s, t, fade)
